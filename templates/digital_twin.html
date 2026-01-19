@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Digital Twin with External Controls</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.104/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.104/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.38.0/min/vs/loader.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+    }
+
+    #agentContainer {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: #0b0c10;
+      border: 1px solid #00ffff;
+      padding: 10px;
+      width: 320px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      font-family: 'Orbitron', sans-serif;
+      z-index: 9999;
+    }
+
+    #ideTab {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: #222;
+      border: 1px solid #00ffff;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      z-index: 9999;
+      cursor: pointer;
+      font-weight: bold;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    #idePanel {
+      position: absolute;
+      top: 50px;
+      left: 10px;
+      width: 320px;
+      height: 250px;
+      background: #1e1e1e;
+      border: 2px solid #888;
+      display: none;
+      flex-direction: column;
+      border-radius: 10px;
+      font-family: 'Fira Code', monospace;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      z-index: 9999;
+    }
+
+    #ideEditor {
+      flex: 1;
+      height: 100%;
+    }
+
+    #ideToolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #444;
+    }
+
+    #ideToolbar button {
+      font-size: 13px;
+      border-radius: 5px;
+      transition: background 0.3s ease;
+      cursor: pointer;
+    }
+
+    #ideToolbar button:first-child {
+      font-size: 14px;
+      font-family: 'Orbitron', sans-serif;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      transition: transform 0.2s, background 0.3s ease;
+    }
+
+    #ideToolbar button:first-child:hover {
+      background-color: #17b75c;
+    }
+
+    #ideToolbar button:last-child {
+      background-color: #ff4d4d;
+      color: #fff;
+    }
+
+    #ideToolbar button:last-child:hover {
+      background-color: #e03c3c;
+    }
+
+    #resizeHandle {
+      height: 8px;
+      background: #444;
+      cursor: ns-resize;
+      width: 100%;
+    }
+
+    #agentInput {
+      width: calc(100% - 100px);
+      padding: 6px;
+      font-size: 14px;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    #agentContainer button {
+      padding: 6px 10px;
+      font-size: 14px;
+      margin-left: 6px;
+      background-color: #0077cc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    #agentContainer button:hover {
+      background-color: #005fa3;
+    }
+
+    .info-btn {
+  padding: 6px 14px;
+  margin: 5px 4px 0 0;
+  border: 1px solid #00ffff;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease, transform 0.2s;
+  font-family: 'Orbitron', sans-serif;
+}
+
+/* Travel button style */
+.travel-btn {
+  background-color: #84ff00;
+  color: white;
+}
+
+.travel-btn:hover {
+  background-color: #21fd0d;
+  transform: scale(1.05);
+}
+
+/* Fly button style */
+.fly-btn {
+  background-color: #ff96b4;
+  color: white;
+}
+
+.fly-btn:hover {
+  background-color: #eb0037;
+  transform: scale(1.05);
+}
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="ideTab">IDE</div>
+
+  <div id="idePanel">
+    <div id="ideToolbar">
+      <button onclick="runUserCode()">Run Code</button>
+    </div>
+    <div id="ideEditor"></div>
+    <div id="resizeHandle" title="Drag to resize"></div>
+  </div>
+
+  <script type="module">
+     Cesium.Ion.defaultAccessToken = "{{ config['CESIUM_TOKEN'] }}"; 
+
+    const PLANE_ASSET_ID = 3533116; // Uploaded in the company's Cesium Ion Assets, use the ID there if different
+
+    window.viewer = new Cesium.Viewer('cesiumContainer', {
+      terrainProvider: Cesium.createWorldTerrain(),
+      baseLayerPicker: false,
+    });
+
+    // Tileset constructions
+    const buildingTileset = await Cesium.createOsmBuildingsAsync();
+    viewer.scene.primitives.add(buildingTileset);
+
+    // Plane setup
+    let currentPlaneEntity = null;
+    let currentPathEntity = null;
+
+    async function spawnIdlePlane() {
+      const idlePos = Cesium.Cartesian3.fromDegrees(2.2945, 48.8584, 1000);
+      const planeModel = await Cesium.IonResource.fromAssetId(PLANE_ASSET_ID);
+
+      if (currentPlaneEntity) viewer.entities.remove(currentPlaneEntity);
+      if (currentPathEntity) viewer.entities.remove(currentPathEntity);
+
+      currentPlaneEntity = viewer.entities.add({
+        name: "Idle Plane",
+        position: idlePos,
+        model: {
+          uri: planeModel,
+          scale: 200,
+          minimumPixelSize: 128,
+          maximumScale: 5000
+        }
+      });
+
+      viewer.trackedEntity = null;
+    }
+
+    await spawnIdlePlane();
+
+    // Zoom to location functionality
+    window.travelTo = function(lat, lon) {
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, 300),
+        orientation: {
+          heading: Cesium.Math.toRadians(0.0),
+          pitch: Cesium.Math.toRadians(-25.0),
+          roll: 0.0
+        }
+      });
+    }
+
+    // Fly to location functionality
+    window.flyPlaneTo = async function(lat, lon) {
+      const startLon = 2.2945;
+      const startLat = 48.8584;
+      const steps = 100;
+
+      if (currentPlaneEntity) viewer.entities.remove(currentPlaneEntity);
+      if (currentPathEntity) viewer.entities.remove(currentPathEntity);
+
+      const startCarto = Cesium.Cartographic.fromDegrees(startLon, startLat);
+      const endCarto = Cesium.Cartographic.fromDegrees(lon, lat);
+      const geodesic = new Cesium.EllipsoidGeodesic(startCarto, endCarto);
+
+      const flight = new Cesium.SampledPositionProperty();
+      const polylinePositions = [];
+
+      const startTime = Cesium.JulianDate.now();
+      const endTime = Cesium.JulianDate.addSeconds(startTime, 20, new Cesium.JulianDate());
+
+      for (let i = 0; i <= steps; i++) {
+        const frac = i / steps;
+        const interp = geodesic.interpolateUsingFraction(frac);
+        const height = 10000 + 5000 * Math.sin(Math.PI * frac);
+        const time = Cesium.JulianDate.addSeconds(startTime, frac * 20, new Cesium.JulianDate());
+        const pos = Cesium.Cartesian3.fromRadians(interp.longitude, interp.latitude, height);
+        flight.addSample(time, pos);
+        polylinePositions.push(pos);
+      }
+
+      currentPathEntity = viewer.entities.add({
+        name: "Flight Path",
+        polyline: {
+          positions: polylinePositions,
+          width: 3,
+          material: Cesium.Color.CYAN,
+          clampToGround: false
+        }
+      });
+
+      const planeModel = await Cesium.IonResource.fromAssetId(PLANE_ASSET_ID);
+      currentPlaneEntity = viewer.entities.add({
+        availability: new Cesium.TimeIntervalCollection([
+          new Cesium.TimeInterval({ start: startTime, stop: endTime })
+        ]),
+        position: flight,
+        orientation: new Cesium.VelocityOrientationProperty(flight),
+        model: {
+          uri: planeModel,
+          scale: 200,
+          minimumPixelSize: 128,
+          maximumScale: 5000
+        }
+      });
+
+      viewer.clock.startTime = startTime.clone();
+      viewer.clock.stopTime = endTime.clone();
+      viewer.clock.currentTime = startTime.clone();
+      viewer.clock.clockRange = Cesium.ClockRange.CLAMPED;
+      viewer.clock.multiplier = 1;
+      viewer.clock.shouldAnimate = true;
+
+      viewer.trackedEntity = currentPlaneEntity;
+    }
+
+    // Function call to buttons
+    viewer.infoBox.frame.addEventListener("load", function () {
+      const iframe = viewer.infoBox.frame;
+      iframe.contentWindow.travelTo = window.travelTo;
+      iframe.contentWindow.flyPlaneTo = window.flyPlaneTo;
+    });
+
+    fetch('/places')
+      .then(res => res.json())
+      .then(places => {
+        for (const place of places) {
+          viewer.entities.add({
+            id: place.name,
+            name: place.name,
+            position: Cesium.Cartesian3.fromDegrees(place.lng, place.lat),
+            point: { pixelSize: 10, color: Cesium.Color.RED },
+            description: `
+                <h3>${place.name}</h3>
+                <p>${place.description}</p>
+                <button id="travel-${place.name}" class="info-btn travel-btn">Travel</button>
+                <button id="fly-${place.name}" class="info-btn fly-btn">Fly</button>
+            `
+          });
+        }
+      });
+
+    viewer.selectedEntityChanged.addEventListener((entity) => {
+
+      // PLane flying physics
+  if (entity && entity.position) {
+    const pos = entity.position.getValue(Cesium.JulianDate.now());
+    const carto = Cesium.Cartographic.fromCartesian(pos);
+    const lat = Cesium.Math.toDegrees(carto.latitude);
+    const lon = Cesium.Math.toDegrees(carto.longitude);
+
+    setTimeout(() => {
+      const iframeDoc = viewer.infoBox.frame.contentDocument;
+      const travelBtn = iframeDoc?.getElementById(`travel-${entity.name}`);
+      const flyBtn = iframeDoc?.getElementById(`fly-${entity.name}`);
+
+      if (travelBtn) travelBtn.onclick = () => travelTo(lat, lon);
+      if (flyBtn) flyBtn.onclick = () => flyPlaneTo(lat, lon);
+    }, 200);
+  }
+});
+  </script>
+
+  <script>
+    // IDE logic
+    window.addEventListener("DOMContentLoaded", () => {
+      const ideTab = document.getElementById('ideTab');
+      const idePanel = document.getElementById('idePanel');
+      const ideEditorDiv = document.getElementById('ideEditor');
+      let monacoEditor = null;
+
+      ideTab.addEventListener('click', () => {
+        idePanel.style.display = idePanel.style.display === 'none' ? 'flex' : 'none';
+        if (!monacoEditor) initMonaco();
+      });
+
+      window.runUserCode = () => {
+        if (!monacoEditor) return;
+        const code = monacoEditor.getValue();
+        try {
+          const scopedFunc = new Function('viewer', 'flyPlaneTo', 'travelTo', code);
+          scopedFunc(window.viewer, window.flyPlaneTo, window.travelTo);
+        } catch (err) {
+          alert("Error in your script:\n" + err.message);
+        }
+      };
+      // IDE panel content using th Monaco editor
+      function initMonaco() {
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.38.0/min/vs' } });
+        require(['vs/editor/editor.main'], () => {
+          monacoEditor = monaco.editor.create(ideEditorDiv, {
+            value: `// Try these commands:\n// flyPlaneTo(lat, lon);\n// travelTo(lat, lon);\n\nflyPlaneTo(35.6895, 139.6917);`,
+            language: 'javascript',
+            theme: 'vs-dark',
+            automaticLayout: true,
+          });
+        });
+      }
+    });
+
+    const resizeHandle = document.getElementById("resizeHandle");
+    let isResizing = false;
+
+    resizeHandle.addEventListener("mousedown", (e) => {
+      isResizing = true;
+      document.body.style.cursor = "ns-resize";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isResizing) return;
+      const panel = document.getElementById("idePanel");
+      const newHeight = e.clientY - panel.getBoundingClientRect().top;
+      if (newHeight > 150) {
+        panel.style.height = newHeight + "px";
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      isResizing = false;
+      document.body.style.cursor = "";
+    });
+  </script>
+</body>
+</html>

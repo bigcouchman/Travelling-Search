@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.100/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.100/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<script>
+  // Token placement (not needed atm)
+  Cesium.Ion.defaultAccessToken = "{{ config['CESIUM_TOKEN'] }}";
+</script>
+
+  <meta charset="UTF-8">
+  <title>Internationallia Travellina Official Website</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+
+</head>
+<body>
+
+<!-- Main Header -->
+<div class="header">
+  <div class="header-content">
+    <nav class="nav-links">
+      <a href="/">Home</a>
+  <a href="/about">About</a>
+  {% if session.get("user") %}
+    <a href="/favorites">Favorites</a>
+    <a href="/tripplan">Trip Planner</a>
+    <a href="/profile">My Profile</a>
+    <a href="/trips">Trips</a>
+    <a href="/digital_twin">Digital Twin</a>
+    <a href="/logout">Logout</a>
+  {% else %}
+    <a href="/login">Login</a>
+    <a href="/signup">Sign Up</a>
+  {% endif %}
+    </nav>
+  </div>
+
+  <h1 class="page-title">Internationallia Travellina</h1>
+  <p class="subheading">Discover hotspots across the world</p>
+  <p class="subheading">Embrace your inner globe trotter</p>
+  {% if session.get("user") %}
+    <p class="welcome-message">Welcome, {{ session["user"] }}!</p>
+  {% endif %}
+
+    <!-- Search by Category/Filter -->
+    <div class="filter-section">
+      <label for="categoryFilter">Filter by category:</label>
+      <select id="categoryFilter">
+        <option value="">All</option>
+        <option value="Attraction">Attractions</option>
+        <option value="Viewpoint">Viewpoints</option>
+      </select>
+    </div>
+
+    <!-- Search Area -->
+    <div class="search-section">
+      <input type="text" id="searchBox" placeholder="Search for a city or country..." />
+      <button onclick="searchPlaces()">Search</button>
+    </div>
+  </div>
+
+  <!-- Search Results -->
+  <div id="results" class="results-container"></div>
+
+  <!-- Ai Chatbot (Travellina Chat) -->
+  <button id="chat-toggle">Chat</button>
+  <div id="chat-box" class="chat-box hidden">
+    <div class="chat-header">
+      <span>Travellina Chat</span>
+    </div>
+    <div id="chat-thread" class="chat-thread"></div>
+    <div class="chat-input">
+      <textarea id="prompt" placeholder="What's your question?" rows="2"></textarea>
+      <button onclick="askAI()">Send</button>
+    </div>
+  </div>
+
+  <!-- Search location function (through database)-->
+  <script>
+async function searchPlaces() {
+  const term = document.getElementById('searchBox').value.toLowerCase();
+  const category = document.getElementById('categoryFilter').value;
+  const results = document.getElementById('results');
+
+  if (!term.trim()) {
+    results.innerHTML = "<p class='warning'>Please enter a location to search.</p>";
+    return;
+  }
+
+  try {
+    const response = await fetch(`/search?q=${encodeURIComponent(term)}&category=${encodeURIComponent(category)}`);
+    const places = await response.json();
+
+    if (places.length === 0) {
+      results.innerHTML = "<p class='no-results'>No matching results found.</p>";
+      return;
+    }
+
+    // Place names, descriptions, and images
+    results.innerHTML = '';
+    places.forEach(p => {
+      const box = document.createElement('div');
+      box.className = `result-card ${p.category?.toLowerCase() || ''}`;
+
+      const infoRow = document.createElement('div');
+      infoRow.className = 'info-row';
+
+      const textCol = document.createElement('div');
+      textCol.className = 'text-col';
+      textCol.innerHTML = `
+        <h3>${p.name}</h3>
+        <p><strong>City:</strong> ${p.city}</p>
+        <p><strong>Category:</strong> ${p.category || 'Unknown'}</p>
+      `;
+
+      const image = document.createElement('img');
+      image.className = 'result-img';
+
+      if (p.image_url === "No image available") {
+        image.src = '/static/no-image.png';
+        image.alt = 'No image available';
+      } else {
+        image.src = p.image_url;
+        image.alt = p.name;
+        image.onerror = function () {
+        if (!this.dataset.fallback) {
+          this.src = '/static/no-image.png';
+          this.alt = 'No image available';
+          this.dataset.fallback = 'true'; 
+        }
+        };
+      }
+
+      infoRow.appendChild(textCol);
+      infoRow.appendChild(image);
+
+      const expand = document.createElement('div');
+      expand.className = 'expand-area';
+      expand.innerHTML = `
+  <p>${p.description || "No description available."}</p>
+  <p><strong>Rating:</strong> ${p.rating ? p.rating.toFixed(1)+' / 5' : 'No rating available'}</p>
+  <button onclick="openMap('${p.name}, ${p.city}')">Open Map</button>
+  <button onclick="toggleFavorite('${p.id}', this)">Favorite</button>
+`;
+
+      expand.style.display = 'none';
+
+      box.addEventListener('click', () => {
+        expand.style.display = expand.style.display === 'none' ? 'block' : 'none';
+      });
+
+      box.appendChild(infoRow);
+      box.appendChild(expand);
+      results.appendChild(box);
+    });
+
+  } catch (err) {
+    console.error(err);
+    results.innerHTML = "<p class='warning'>Error loading results. Please try again.</p>";
+  }
+}
+
+// Chatbot function
+const conversation = []; 
+async function askAI() {
+  const promptInput = document.getElementById('prompt');
+  const thread = document.getElementById('chat-thread');
+  const prompt = promptInput.value.trim();
+
+  if (!prompt) return;
+
+  conversation.push({ role: 'user', content: prompt });
+  appendMessage(prompt, 'user-message');
+  promptInput.value = '';
+
+  const aiMsg = document.createElement('div');
+  aiMsg.className = 'message ai-message';
+  thread.appendChild(aiMsg);
+  thread.scrollTop = thread.scrollHeight;
+
+  try {
+    const response = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt })
+    });
+
+    if (!response.ok) throw new Error('Network response was not ok');
+
+    const data = await response.json();
+    aiMsg.textContent = data.response;
+    thread.scrollTop = thread.scrollHeight;
+    conversation.push({ role: 'ai', content: data.response });
+
+  } catch (err) {
+    aiMsg.textContent = '[Error getting response]';
+    console.error(err);
+  }
+}
+
+
+// Keep Message in Chatbot function
+    function appendMessage(text, className) {
+      const thread = document.getElementById('chat-thread');
+      const msg = document.createElement('div');
+      msg.className = `message ${className}`;
+      msg.textContent = text;
+      thread.appendChild(msg);
+      thread.scrollTop = thread.scrollHeight;
+    }
+// Open Google Maps Function
+    function openMap(locationName) {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(locationName)}`;
+      window.open(url, "_blank");
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('chat-toggle').addEventListener('click', () => {
+        document.getElementById('chat-box').classList.toggle('hidden');
+      });
+
+      const testBtn = document.getElementById('cesiumTestBtn');
+  if (testBtn) {
+    testBtn.addEventListener('click', () => {
+      showCesiumModel(3878, 'Cesium Man Test');
+    });
+  }
+    });
+
+    let modelViewer;  
+
+function closeModel() {
+  document.getElementById('modelModal').classList.add('hidden');
+}
+
+// Add to favorite
+function toggleFavorite(placeId, btn) {
+  if (btn.dataset.busy) return;    
+  btn.dataset.busy = "1";
+
+  fetch(`/favorite/${placeId}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        btn.textContent = data.status === 'added' ? '💖' : '❤️';
+    })
+    .catch(console.error)
+    .finally(() => delete btn.dataset.busy);
+}
+
+
+
+// trip itinerary (Work in Progress)
+async function generateItinerary() {
+  const city = document.getElementById('tripCity').value.trim();
+  if (!city) return alert("Please enter a city.");
+
+  const prompt = `Give me a 3-day travel itinerary for ${city}, with descriptions of each day's activities.`;
+
+  const res = await fetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt })
+  });
+
+  const data = await res.json();
+  document.getElementById('aiTripResult').innerHTML = `<pre>${data.response}</pre>`;
+}
+
+
+  </script>
+
+
+</body>
+</html>

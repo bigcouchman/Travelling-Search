@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Trips</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+      .day-card{border:1px solid #ddd;margin:.8rem 0;padding:.8rem;border-radius:6px}
+      .selected-list li{margin-left:1rem}
+      .results-container{margin-top:1rem}
+
+      /* === Trip card container === */
+.trip-card {
+    background-color: #000000;
+    border: 2px solid #a020f0; 
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 0 12px #a020f0;
+    font-family: 'Orbitron', sans-serif;
+    width: 90%;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* === Clickable header === */
+.trip-header {
+  padding: 1rem;
+  cursor: pointer;
+  background-color: #1a1a1a;
+  border-bottom: 1px solid #a020f0;
+  font-size: 1.1rem;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trip-header:hover {
+  background-color: #2a2a2a;
+}
+
+/* === Expanded content === */
+.trip-body {
+  padding: 1rem 1.5rem;
+  background-color: #111;
+}
+
+.trip-body h4 {
+  margin-top: 0.5rem;
+  text-shadow: 0 0 5px #a020f0;
+}
+
+.trip-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+/* === Delete Button Inside Body === */
+.trip-body .delete-btn {
+  display: block;
+  margin-left: auto;
+  background-color: crimson;
+  font-family: 'Orbitron', sans-serif;
+  color: white;
+  border: none;
+  padding: 0.5rem 1.2rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.trip-body .delete-btn:hover {
+  background-color: #b22222;
+}
+
+.no-trips-box {
+  background-color: #111;
+  color: #ccc;
+  border: 2px dashed #a020f0;
+  border-radius: 8px;
+  text-align: center;
+  padding: 1.2rem;
+  font-family: 'Orbitron', sans-serif;
+  max-width: 600px;
+  margin: 2rem auto;
+  box-shadow: 0 0 10px #a020f0;
+}
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <div class="header">
+      <div class="header-content">
+    <nav class="nav-links">
+      <a href="/">Home</a>
+      <a href="/about">About</a>
+    </nav>
+  </div>
+  <h1>Your Trips</h1>
+</div>
+
+<!-- If no trips yet, show modal-->
+{% if trips|length == 0 %}
+  <div class="no-trips-box">
+    No trips yet. <a href="/tripplan" style="color:#a020f0;">Plan one →</a>
+  </div>
+{% endif %}
+
+<!-- Trips created -->
+<div id="tripList">
+  {% for t in trips %}
+  <div class="trip-card" id="card-{{ t.id }}">
+     <div class="trip-header" onclick="toggleTrip('{{ t.id }}')">
+        <strong>{{ t.title }}</strong>
+        <span>({{ t.start_date }} → {{ t.end_date }})</span>
+     </div>
+     <div class="trip-body" id="trip-{{ t.id }}" hidden>
+        <em>Loading…</em>
+     </div>
+  </div>
+  {% endfor %}
+</div>
+
+
+<script>
+  // Open trip to reveal details
+async function toggleTrip(id){
+    const body = document.getElementById('trip-'+id);
+    const isOpen = !body.hidden;
+    if (isOpen){
+        body.hidden = true;
+        return;
+    }
+
+    if (body.dataset.loaded !== "1"){
+        const res  = await fetch(`/api/trip_days/${id}`);
+        const json = await res.json();
+
+        body.innerHTML = json.map(day => `
+            <h4>${day.date}</h4>
+            <ul>${day.places.map(p=>`<li>${p.name} (${p.city})</li>`).join('')}</ul>
+        `).join('');
+
+        // Append the delete button inside the expanded card
+        const btn = document.createElement('button');
+        btn.textContent = "Delete";
+        btn.className = "delete-btn";
+        btn.onclick = () => deleteTrip(id);
+        body.appendChild(btn);
+
+        body.dataset.loaded = "1";
+    }
+
+    body.hidden = false;
+}
+
+// Delete a created trip
+async function deleteTrip(id) {
+    if (!confirm("Are you sure you want to delete this trip?")) return;
+
+    const res = await fetch(`/api/delete_trip/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+
+    if (json.ok) {
+        document.getElementById(`card-${id}`).remove();
+        alert("Trip deleted.");
+    } else {
+        alert("Error deleting trip: " + json.error);
+    }
+}
+</script>
+
+</body>
+</html>
+

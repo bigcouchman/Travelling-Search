@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Plan a Trip</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+      .day-card {
+    background-color: #000000;
+    border: 2px solid #a020f0; /* neon purple */
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 0 12px #a020f0;
+    color: #f0f0f0;
+    font-family: 'Orbitron', sans-serif;
+    width: 90%;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .day-card h3 {
+    margin-top: 0;
+    font-size: 1.2rem;
+    color: #ffffff;
+    text-shadow: 0 0 5px #a020f0;
+  }
+
+  .day-card ul {
+    list-style: disc;
+    padding-left: 1.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .day-card li {
+    margin-bottom: 0.3rem;
+    font-size: 1rem;
+  }
+
+  .day-card:hover {
+    box-shadow: 0 0 18px #da70d6;
+    transform: scale(1.01);
+    transition: all 0.3s ease;
+  }
+      .selected-list li{margin-left:1rem}
+      .results-container{margin-top:1rem}
+  </style>
+</head>
+<body>
+
+<!--Header-->
+<div class="header">
+    <div class="header-content">
+    <nav class="nav-links">
+      <a href="/">Home</a>
+      <a href="/about">About</a>
+    </nav>
+  </div>
+  <h1>Plan a Trip/Itinerary</h1>
+</div>
+  
+</div>
+
+<!-- Trip info -->
+<div class="profile-container">
+  <form id="tripMetaForm" method="POST" action="/tripplan">
+      <label>Trip name: <input type="text"   name="title"  required></label>
+      <label>Start Date: <input type="date" name="start" value="{{ trip_start }}" required></label>
+      <label>End Date: <input type="date" name="end"   value="{{ trip_end   }}" required></label>
+      <button type="submit" class="nav-btn">Create trip</button>
+  </form>
+</div>
+
+<!--Create day boxes after trip created, search function similar to home page-->
+
+{% if days|length %}
+<script id="trip-days-data" type="application/json">
+  {{ days | tojson }}
+</script>
+
+<section id="planner">
+
+  <div class="search-section">
+     <input id="searchBox" placeholder="Search city or place…">
+     <button onclick="searchPlacesForTrip()">Search</button>
+  </div>
+{% endif %}
+  
+  <div id="results" class="results-container"></div>
+  
+  {% for d in days %}
+  <div class="day-card" data-iso="{{ d.iso }}">
+     <h3>{{ loop.index }}.&nbsp;{{ d.label }}</h3>
+     <ul class="selected-list"></ul>
+  </div>
+  {% endfor %}
+
+  <button  class="nav-btn" id="finalizeBtn">Finalize itinerary</button>
+</section>
+
+
+<script>
+
+  const tripDaysScript = document.getElementById("trip-days-data");
+  const TRIP_DAYS = tripDaysScript ? JSON.parse(tripDaysScript.textContent) : [];
+
+function daySelectHTML () {
+  const opts = TRIP_DAYS
+      .map(d => `<option value="${d.iso}">${d.label}</option>`)
+      .join('');
+  return `<option value="">Add to day…</option>
+          <option value="skip">Free day / none</option>
+          ${opts}`;
+}
+
+async function searchPlacesForTrip(){
+  const term = document.getElementById('searchBox').value.trim().toLowerCase();
+  if(!term) return;
+
+  const res   = await fetch(`/search?q=${encodeURIComponent(term)}&category=`);
+  const places= await res.json();
+
+  const resultsDiv = document.getElementById('results');
+  resultsDiv.innerHTML = "";
+
+  if(!places.length){
+      resultsDiv.textContent = "No matches.";
+      return;
+  }
+
+  // Select days for each location
+  places.forEach(p=>{
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.innerHTML = `
+         <strong>${p.name}</strong> – ${p.city}<br>
+         <small>${p.category||'‑'}</small><br>
+         <select class="add-select">
+             <option value="">Add to day…</option>
+             ${daySelectHTML()}
+         </select>
+      `;
+      card.querySelector('.add-select').addEventListener('change', e=>{
+          const dayIso = e.target.value;
+          if(!dayIso) return;
+          addToDay(dayIso, p);
+          e.target.selectedIndex = 0;        
+      });
+      resultsDiv.appendChild(card);
+  });
+}
+
+function addToDay(iso, place){
+   const ul = document.querySelector(`.day-card[data-iso="${iso}"] .selected-list`);
+   if(!ul) return;
+   const li = document.createElement('li');
+   li.dataset.placeId = place.id;  
+   li.textContent = `${place.name} (${place.city})`;
+   ul.appendChild(li);
+}
+
+const tripMetaForm = document.getElementById('tripMetaForm');
+const finalizeBtn  = document.getElementById('finalizeBtn');
+
+finalizeBtn.addEventListener('click', async () => {
+
+  const meta = Object.fromEntries(new FormData(tripMetaForm));  
+
+  const daysPayload = TRIP_DAYS.map(d => {
+      const ids = [...document.querySelectorAll(
+          `.day-card[data-iso="${d.iso}"] .selected-list li`
+      )].map(li => li.dataset.placeId);
+      return { date: d.iso, places: ids };
+  });
+
+  const res  = await fetch('/api/save_trip', {
+        method : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body   : JSON.stringify({ ...meta, days: daysPayload })
+  });
+  const json = await res.json();
+
+  if (json.ok){
+      location.href = `/trips`;                
+  } else {
+      alert('Error saving trip: ' + json.error);
+  }
+});
+</script>
+
+</body>
+</html>

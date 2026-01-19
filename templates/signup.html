@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sign Up</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+
+  <h1>Sign Up</h1>
+  <p class="subheading">Unlock your inner globe trotter</p>
+</div>
+
+<!-- Signup Form -->
+<div class="profile-container">
+  <form method="POST">
+    <label>Username:</label>
+    <input type="text" name="username" required>
+
+    <label>Email:</label>
+    <input type="email" name="email" required>
+
+    <label>Password:</label>
+    <input type="password" name="password" required>
+
+    <button type="submit" class="nav-btn">Sign Up</button>
+  </form>
+
+  <a href="{{ url_for('login') }}" class="back-link">← Already have an account? Login</a>
+</div>
+
+</body>
+</html>

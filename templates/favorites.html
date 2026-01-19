@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Favorites</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+      <div class="header-content">
+    <nav class="nav-links">
+      <a href="/">Home</a>
+      <a href="/about">About</a>
+    </nav>
+  </div>
+  <h1>Favorite Locations</h1>
+</div>
+  </div>
+
+  <!-- Favorite Locations Section -->
+  <div class="results-container">
+    {% if favorites %}
+      {% for p in favorites %}
+        <div class="result-card {{ p['category']|lower }}">
+          <div class="info-row">
+            <div class="text-col">
+              <h3>{{ p['name'] }}</h3>
+              <p><strong>City:</strong> {{ p['city'] }}</p>
+              <p><strong>Category:</strong> {{ p['category'] or 'Unknown' }}</p>
+            </div>
+            <img src="{{ p['image_url'] if p['image_url'] != 'No image available' else '/static/no-image.png' }}"
+                 alt="{{ p['name'] }}"
+                 class="result-img"
+                 onerror="this.src='/static/no-image.png'; this.alt='No image available';" />
+          </div>
+          <div class="expand-area">
+            <p>{{ p['description'] or 'No description available.' }}</p>
+            <p><strong>Rating:</strong> {{ '%.1f'|format(p['rating']) if p['rating'] else 'No rating available' }}</p>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="no-results">You have no favorite locations yet.</p>
+    {% endif %}
+  </div>
+
+  <script>
+    // Show on Google Map
+    function openMap(locationName) {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(locationName)}`;
+      window.open(url, "_blank");
+    }
+
+    // WORK IN PROGRESS
+    function showCesiumModel(assetId, title, lat = null, lon = null) {
+      alert("Cesium model feature is not implemented on this page yet.");
+    }
+  </script>
+
+</body>
+</html>
